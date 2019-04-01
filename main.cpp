@@ -47,6 +47,12 @@ class vrp_data_storage {
     }
   };
 
+  struct path_t {
+    std::vector<u64> customers;
+    i64 capacity = 0;
+    i64 time = 0;
+  };
+
 public:
   vrp_data_storage(std::string const &filename) {
     std::fstream fstream{filename, std::ios_base::in};
@@ -86,7 +92,36 @@ public:
 
       i64 current_time = 0, warehouse_closing = customers[0].due_date;
       i64 capacity = vehicle_capacity;
-      path.push_back(0);
+
+      path.customers.push_back(0);
+
+      auto insert = [&path, &current_time, &capacity, &set,
+                     this](i64 next, bool debug = false) {
+        current_time += i64(distance(path.customers.back(), next) + 0.5);
+        current_time +=
+            std::max(customers[next].ready_time - current_time, 0ll);
+
+        if (next != 0) {
+          if (capacity >= customers[next].demand)
+            set.erase(next);
+          else
+            customers[next].demand -= capacity;
+
+          capacity -= std::min(capacity, customers[next].demand);
+        } else
+          capacity = vehicle_capacity;
+
+        std::cout << next << " ";
+
+        if (debug)
+          std::cout << ", time: " << current_time
+                    << ", distance: " << distance(path.customers.back(), next)
+                    << ", capacity: " << capacity
+                    << ", i=" << path.customers.back() << ", j=" << next
+                    << std::endl;
+
+        path.customers.push_back(next);
+      };
 
       while (current_time < warehouse_closing) {
         i64 next = -1;
@@ -95,8 +130,14 @@ public:
         for (u64 i : set) {
           i64 open_time = customers[i].ready_time - current_time;
 
+          if (distance(path.customers.back(), i) >
+              warehouse_closing + distance(path.customers.back(), 0)) {
+            next = -1;
+            break;
+          }
+
           double profit =
-              profitability(path.back(), i, open_time,
+              profitability(path.customers.back(), i, open_time,
                             customers[i].due_date - current_time, capacity);
 
           // std::cout << profit << std::endl;
@@ -106,39 +147,65 @@ public:
           }
         }
 
-        if (next != -1) {
-
-          current_time += i64(distance(path.back(), next) + 0.5);
-
-          if (next != 0) {
-            if (capacity >= customers[next].demand)
-              set.erase(next);
-
-            capacity -= std::min(capacity, customers[next].demand);
-          } else
-            capacity = vehicle_capacity;
-
-          std::cout << next << " ";
-          /*std::cout << ", time: " << current_time
-                    << ", distance: " << distance(path.back(), next)
-                    << ", capacity: " << capacity << ", i=" << path.back()
-                    << ", j=" << next << std::endl;*/
-
-          path.push_back(next);
+        if (next != -1 && current_time < customers[0].due_date) {
+          insert(next);
         } else
           break;
       }
 
+      if (path.customers.back() != 0)
+        insert(0);
+
+      path.time = current_time;
+      path.capacity = capacity;
+
       overall_distance += current_time;
       std::cout << std::endl << std::endl;
+
+      if (set.size() == 1)
+        break;
     }
     std::cout << overall_distance << std::endl;
   }
 
+  void local_search() { perturbation(12); }
+
 private:
+  void perturbation(u64 path) {
+    double acc = 0;
+    for (u64 i = 0, k = 0; i < paths.size(); ++i) {
+      if (i != path && !paths[i].customers.empty()) {
+        while (k != paths[i].customers.size() - 1) {
+          double t = estimate_time(paths[i], k);
+          acc += t;
+          std::cout << t << std::endl;
+        }
+        k = 0;
+      }
+    }
+    std::cout << acc << std::endl;
+  }
+
+  double estimate_time(path_t &path, u64 &start) {
+    double time = 0.0;
+
+    std::cout << std::endl << std::endl;
+
+    do {
+      std::cout << path.customers[start] << " ";
+      time += distance(path.customers[start], path.customers[start + 1]);
+      ++start;
+    } while (path.customers[start] != 0);
+
+    std::cout << path.customers[start] << std::endl << std::endl;
+    time += distance(path.customers[start], 0);
+
+    return time;
+  }
+
   double distance(u64 i, u64 j) {
-    return std::sqrt(std::pow(customers[i].x - customers[j].x, 2) +
-                     std::pow(customers[i].y - customers[j].y, 2));
+    return std::hypot(customers[i].x - customers[j].x,
+                      customers[i].y - customers[j].y);
   }
 
   // ->> max
@@ -149,6 +216,9 @@ private:
     open_time = (open_time <= 0) ? 1 : open_time;
 
     if (d == 0)
+      return 0;
+
+    if (capacity >= vehicle_capacity / 3 && end == 0)
       return 0;
 
     if (close_time - d > 0) {
@@ -198,11 +268,12 @@ private:
   double max_distance;
   std::vector<std::vector<double>> distance_matrix;
 
-  std::vector<std::list<u64>> paths;
+  std::vector<path_t> paths;
 };
 
 int main() {
   vrp_data_storage vrp("..\\input\\C108.txt");
+  vrp.local_search();
 
   return 0;
 }
