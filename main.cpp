@@ -8,6 +8,8 @@
 #include <list>
 #include <unordered_set>
 
+#include <SFML/Graphics.hpp>
+
 using u64 = std::uint64_t;
 using i64 = std::int64_t;
 
@@ -136,9 +138,10 @@ public:
             break;
           }
 
-          double profit =
-              profitability(path.customers.back(), i, open_time,
-                            customers[i].due_date - current_time, capacity);
+          double profit = profitability(path.customers.back(), i, open_time,
+                                        customers[i].due_date - current_time -
+                                            customers[i].service_time,
+                                        capacity);
 
           // std::cout << profit << std::endl;
           if (profit > max_profit) {
@@ -274,6 +277,32 @@ private:
 int main() {
   vrp_data_storage vrp("..\\input\\C108.txt");
   vrp.local_search();
+
+  using namespace sf;
+
+  VideoMode vm = VideoMode::getDesktopMode();
+
+  double size = 1.5;
+
+  RenderWindow window(VideoMode(int(vm.width / size), int(vm.height / size)),
+                      "Test.", Style::Titlebar | Style::Close);
+
+  window.setPosition(Vector2i(vm.width / 2 - vm.width / (size * 2),
+                              vm.height / 2 - vm.height / (size * 2)));
+
+  window.setKeyRepeatEnabled(true);
+
+  Event event;
+  while (window.isOpen()) {
+
+    while (window.pollEvent(event)) {
+      switch (event.type) {
+      case Event::Closed:
+        window.close();
+        break;
+      }
+    }
+  }
 
   return 0;
 }

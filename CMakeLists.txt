@@ -4,8 +4,12 @@ project (CVRPTW)
 
 set(CMAKE_CXX_STANDARD 17)
 
-#include_directories("thirdparty/SFML/include")
+include_directories("thirdparty/SFML/include")
+
+set(SFML_STATIC_LIBRARIES TRUE)
+set(SFML_DIR "thirdparty/SFML/lib/cmake/SFML")
+find_package(SFML 2.5 COMPONENTS graphics audio REQUIRED)
 
 set(TARGET_SOURCES main.cpp)
 add_executable(main ${TARGET_SOURCES})
-#target_link_libraries(main  "thirdparty/SFML/lib/sfml-graphics" "thirdparty/SFML/lib/sfml-window"  "thirdparty/SFML/lib/sfml-system")
+target_link_libraries(main sfml-graphics sfml-audio)
