@@ -56,7 +56,13 @@ class vrp_data_storage {
   };
 
 public:
-  vrp_data_storage(std::string const &filename) {
+  enum Heuristics { Greedy = 0 };
+
+  vrp_data_storage() = default;
+
+  void read_data(std::string const &filename) {
+    this->clear();
+
     std::fstream fstream{filename, std::ios_base::in};
     std::string current_line;
 
@@ -76,23 +82,88 @@ public:
         customers.emplace_back(id, x, y, demand, ready_time, due_date,
                                service_time);
     }
-
-    // std::cout << customers;
-
-    generate_distance_matrix();
-    generate_initial_solution();
   }
 
-  void generate_initial_solution() {
+  void generate_initial_solution(Heuristics heuristics = Heuristics::Greedy) {
+    generate_distance_matrix();
+
+    switch (heuristics) {
+    case Heuristics::Greedy:
+      greedy_heuristics();
+      break;
+    default:
+      std::cerr << "Wrong type." << std::endl;
+      break;
+    }
+  }
+
+  void draw(sf::RenderWindow &window, bool new_colors = false) {
+    static std::random_device rd;
+    static unsigned int seed = rd();
+
+    if (new_colors)
+      seed = rd();
+
+    std::mt19937 prng(seed);
+
+    sf::Vector2u window_size = window.getSize();
+    double zoom = 0.9;
+
+    auto world_to_window = [window_size, zoom,
+                            this](i64 current_x,
+                                  i64 current_y) -> sf::Vector2<i64> {
+      i64 x =
+          (current_x - min_x) / double(max_x - min_x) * window_size.x * zoom +
+          (1.0 - zoom) * window_size.x / 2;
+      i64 y =
+          (current_y - min_y) / double(max_y - min_y) * window_size.y * zoom +
+          (1.0 - zoom) * window_size.y / 2;
+      return {x, y};
+    };
+
+    for (auto &path : paths) {
+      std::vector<sf::Vertex> line(path.customers.size());
+
+      int r = prng() % 256, g = prng() % 256, b = prng() % 256;
+      sf::Color color(r, g, b);
+
+      int i = 0;
+      for (auto &customer : path.customers) {
+        auto [x, y] =
+            world_to_window(customers[customer].x, customers[customer].y);
+
+        line[i].position = sf::Vector2f(x, y);
+        line[i].color = color;
+        ++i;
+      }
+      window.draw(line.data(), line.size(), sf::LineStrip);
+    }
+    window.display();
+  }
+
+  void local_search() { perturbation(12); }
+
+private:
+  void clear() {
+    max_x = max_y = std::numeric_limits<i64>::min();
+    min_x = min_y = std::numeric_limits<i64>::max();
+
+    vehicle_amount = vehicle_capacity = 0;
+    customers.clear();
+    max_distance = 0.0;
+    distance_matrix.clear();
+    paths.clear();
+  }
+
+  void greedy_heuristics() {
     std::unordered_set<u64> set;
     for (u64 i = 0; i < customers.size(); ++i)
       set.insert(i);
 
-    double overall_distance = 0.0;
-
+    i64 warehouse_closing = customers[0].due_date;
     for (auto &path : paths) {
 
-      i64 current_time = 0, warehouse_closing = customers[0].due_date;
+      i64 current_time = 0;
       i64 capacity = vehicle_capacity;
 
       path.customers.push_back(0);
@@ -162,50 +233,13 @@ public:
       path.time = current_time;
       path.capacity = capacity;
 
-      overall_distance += current_time;
       std::cout << std::endl << std::endl;
 
       if (set.size() == 1)
         break;
     }
-    std::cout << overall_distance << std::endl;
   }
 
-  void draw(sf::RenderWindow &window, bool draw_circles = false) {
-    // TODO: calculate shiftX, shiftY and zoom factor
-
-    static float shift = 150;
-    auto size = window.getSize();
-    for (auto &path : paths) {
-      std::vector<sf::Vertex> line(path.customers.size());
-
-      int r = rand() % 255, g = rand() % 256, b = rand() % 256;
-      sf::Color color(r, g, b);
-
-      int i = 0;
-
-      for (auto &customer : path.customers) {
-        if (draw_circles) {
-          sf::CircleShape circle;
-          circle.setRadius(4);
-          circle.setPosition(customers[customer].x * 7 + shift - 4,
-                             customers[customer].y * 7 + shift - 4);
-          window.draw(circle);
-        }
-
-        line[i].position = sf::Vector2f(customers[customer].x * 7 + shift,
-                                        customers[customer].y * 7 + shift);
-        line[i].color = color;
-        ++i;
-      }
-      window.draw(line.data(), line.size(), sf::LineStrip);
-    }
-    window.display();
-  }
-
-  void local_search() { perturbation(12); }
-
-private:
   void perturbation(u64 path) {
     double acc = 0;
     for (u64 i = 0, k = 0; i < paths.size(); ++i) {
@@ -286,6 +320,13 @@ private:
         double d = std::sqrt(std::pow(customers[i].x - customers[j].x, 2) +
                              std::pow(customers[i].y - customers[j].y, 2));
         distance_matrix[i][j] = distance_matrix[j][i] = d;
+
+        max_x = std::max(max_x, customers[i].x);
+        max_y = std::max(max_y, customers[i].y);
+
+        min_x = std::min(min_x, customers[i].x);
+        min_y = std::min(min_y, customers[i].y);
+
         if (d > max_distance) {
           max_distance = d;
           start = i;
@@ -301,6 +342,9 @@ private:
   std::vector<customer_description_t> customers;
 
   double max_distance;
+  i64 max_x, min_x;
+  i64 max_y, min_y;
+
   std::vector<std::vector<double>> distance_matrix;
 
   std::vector<path_t> paths;
@@ -309,7 +353,10 @@ private:
 int main() {
   srand(time(nullptr));
 
-  vrp_data_storage vrp("..\\input\\C108.txt");
+  vrp_data_storage vrp;
+  vrp.read_data("..\\input\\C108.txt");
+  vrp.generate_initial_solution(vrp_data_storage::Heuristics::Greedy);
+
   vrp.local_search();
 
   using namespace sf;
@@ -319,28 +366,35 @@ int main() {
   double size = 1.5;
 
   RenderWindow window(VideoMode(int(vm.width / size), int(vm.height / size)),
-                      "Test.", Style::Titlebar | Style::Close);
+                      "Test.", Style::Titlebar | Style::Close | Style::Resize);
 
   window.setPosition(Vector2i(vm.width / 2 - vm.width / (size * 2),
                               vm.height / 2 - vm.height / (size * 2)));
 
   window.setKeyRepeatEnabled(true);
-
-  // window.clear(Color::White);
-  vrp.draw(window);
+  window.setVerticalSyncEnabled(true);
 
   Event event;
   while (window.isOpen()) {
+    vrp.draw(window);
 
     while (window.pollEvent(event)) {
       switch (event.type) {
+
+      case Event::KeyPressed:
+        if (event.key.code == Keyboard::Space)
+          vrp.draw(window, true);
+
+        break;
+
       case Event::Closed:
         window.close();
         break;
-      case Event::KeyPressed:
-        if (event.key.code == Keyboard::Space) {
-          vrp.draw(window);
-        }
+
+      case Event::Resized:
+        FloatRect visibleArea(0, 0, event.size.width, event.size.height);
+        window.setView(View(visibleArea));
+        break;
       }
     }
   }
