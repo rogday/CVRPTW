@@ -171,6 +171,38 @@ public:
     std::cout << overall_distance << std::endl;
   }
 
+  void draw(sf::RenderWindow &window, bool draw_circles = false) {
+    // TODO: calculate shiftX, shiftY and zoom factor
+
+    static float shift = 150;
+    auto size = window.getSize();
+    for (auto &path : paths) {
+      std::vector<sf::Vertex> line(path.customers.size());
+
+      int r = rand() % 255, g = rand() % 256, b = rand() % 256;
+      sf::Color color(r, g, b);
+
+      int i = 0;
+
+      for (auto &customer : path.customers) {
+        if (draw_circles) {
+          sf::CircleShape circle;
+          circle.setRadius(4);
+          circle.setPosition(customers[customer].x * 7 + shift - 4,
+                             customers[customer].y * 7 + shift - 4);
+          window.draw(circle);
+        }
+
+        line[i].position = sf::Vector2f(customers[customer].x * 7 + shift,
+                                        customers[customer].y * 7 + shift);
+        line[i].color = color;
+        ++i;
+      }
+      window.draw(line.data(), line.size(), sf::LineStrip);
+    }
+    window.display();
+  }
+
   void local_search() { perturbation(12); }
 
 private:
@@ -225,13 +257,13 @@ private:
       return 0;
 
     if (close_time - d > 0) {
-      ret = 1.0 / (open_time) + max_distance / d;
+      ret = 1.0 / (open_time) + 1.0 * max_distance / d;
 
       if (capacity > customers[end].demand)
         ret += 1.0;
       else {
         if (customers[end].demand != 0)
-          ret += capacity / customers[end].demand;
+          ret += 1.0 * capacity / customers[end].demand;
         else if (capacity == 0)
           return 100;
       }
@@ -275,6 +307,8 @@ private:
 };
 
 int main() {
+  srand(time(nullptr));
+
   vrp_data_storage vrp("..\\input\\C108.txt");
   vrp.local_search();
 
@@ -292,6 +326,9 @@ int main() {
 
   window.setKeyRepeatEnabled(true);
 
+  // window.clear(Color::White);
+  vrp.draw(window);
+
   Event event;
   while (window.isOpen()) {
 
@@ -300,6 +337,10 @@ int main() {
       case Event::Closed:
         window.close();
         break;
+      case Event::KeyPressed:
+        if (event.key.code == Keyboard::Space) {
+          vrp.draw(window);
+        }
       }
     }
   }
