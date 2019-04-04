@@ -7,6 +7,7 @@
 #include <sstream>
 #include <list>
 #include <unordered_set>
+#include <cassert>
 
 #include <SFML/Graphics.hpp>
 
@@ -49,11 +50,7 @@ class vrp_data_storage {
     }
   };
 
-  struct path_t {
-    std::vector<u64> customers;
-    i64 capacity = 0;
-    i64 time = 0;
-  };
+  using path_t = std::vector<u64>;
 
 public:
   enum Heuristics { Greedy = 0 };
@@ -122,13 +119,13 @@ public:
     };
 
     for (auto &path : paths) {
-      std::vector<sf::Vertex> line(path.customers.size());
+      std::vector<sf::Vertex> line(path.size());
 
       int r = prng() % 256, g = prng() % 256, b = prng() % 256;
       sf::Color color(r, g, b);
 
       int i = 0;
-      for (auto &customer : path.customers) {
+      for (auto &customer : path) {
         auto [x, y] =
             world_to_window(customers[customer].x, customers[customer].y);
 
@@ -161,113 +158,91 @@ private:
       set.insert(i);
 
     i64 warehouse_closing = customers[0].due_date;
+
     for (auto &path : paths) {
 
-      i64 current_time = 0;
+      i64 current_time = 0, new_time = 0;
       i64 capacity = vehicle_capacity;
 
-      path.customers.push_back(0);
-
-      auto insert = [&path, &current_time, &capacity, &set,
-                     this](i64 next, bool debug = false) {
-        current_time += i64(distance(path.customers.back(), next) + 0.5);
-        current_time +=
-            std::max(customers[next].ready_time - current_time, 0ll);
-
-        if (next != 0) {
-          if (capacity >= customers[next].demand)
-            set.erase(next);
-          else
-            customers[next].demand -= capacity;
-
-          capacity -= std::min(capacity, customers[next].demand);
-        } else
-          capacity = vehicle_capacity;
-
-        std::cout << next << " ";
-
-        if (debug)
-          std::cout << ", time: " << current_time
-                    << ", distance: " << distance(path.customers.back(), next)
-                    << ", capacity: " << capacity
-                    << ", i=" << path.customers.back() << ", j=" << next
-                    << std::endl;
-
-        path.customers.push_back(next);
-      };
+      path.push_back(0);
 
       while (current_time < warehouse_closing) {
         i64 next = -1;
-        double max_profit = 0.0;
+        double min_dist = std::numeric_limits<double>::max();
 
         for (u64 i : set) {
-          i64 open_time = customers[i].ready_time - current_time;
+          // distance from current to new + current time + time of service +
+          // await time
+          i64 tmp = current_time + distance(path.back(), i);
+          tmp += std::max(customers[i].ready_time - tmp, 0ll) +
+                 customers[i].service_time;
 
-          if (distance(path.customers.back(), i) >
-              warehouse_closing + distance(path.customers.back(), 0)) {
-            next = -1;
-            break;
-          }
+          // if we CAN go to the new location and not end up getting late for
+          // warehouse closing and we can fullfill the needs of a client
+          if (tmp <= warehouse_closing - distance(i, 0) &&
+              tmp <= customers[i].due_date && capacity >= customers[i].demand) {
+            double dist = distance(path.back(), i);
 
-          double profit = profitability(path.customers.back(), i, open_time,
-                                        customers[i].due_date - current_time -
-                                            customers[i].service_time,
-                                        capacity);
-
-          // std::cout << profit << std::endl;
-          if (profit > max_profit) {
-            max_profit = profit;
-            next = i;
+            if (dist < min_dist) {
+              new_time = tmp;
+              min_dist = dist;
+              next = i;
+              break;
+            }
           }
         }
 
-        if (next != -1 && current_time < customers[0].due_date) {
-          insert(next);
+        if (next != -1) { // insertion
+          current_time = new_time;
+          set.erase(next);
+          capacity -= customers[next].demand;
+          path.push_back(next);
+
+          if (false) {
+            std::cout << ", time: " << current_time
+                      << ", distance: " << distance(path.back(), next)
+                      << ", capacity: " << capacity << ", i=" << path.back()
+                      << ", j=" << next << std::endl;
+          }
         } else
           break;
       }
 
-      if (path.customers.back() != 0)
-        insert(0);
+      if (path.size() > 1) // heading back to the depot
+        path.push_back(0);
 
-      path.time = current_time;
-      path.capacity = capacity;
-
-      std::cout << std::endl << std::endl;
-
-      if (set.size() == 1)
+      if (set.empty())
         break;
     }
+    assert(set.empty());
   }
 
   void perturbation(u64 path) {
     double acc = 0;
+    int s = 1;
+
     for (u64 i = 0, k = 0; i < paths.size(); ++i) {
-      if (i != path && !paths[i].customers.empty()) {
-        while (k != paths[i].customers.size() - 1) {
+      if (i != path && !paths[i].empty()) {
+        ++s;
+        while (k != paths[i].size() - 1) {
           double t = estimate_time(paths[i], k);
           acc += t;
-          std::cout << t << std::endl;
         }
         k = 0;
       }
     }
-    std::cout << acc << std::endl;
+    std::cout << acc << " vehicles: " << s << std::endl;
   }
 
   double estimate_time(path_t &path, u64 &start) {
     double time = 0.0;
 
-    std::cout << std::endl << std::endl;
-
     do {
-      std::cout << path.customers[start] << " ";
-      time += distance(path.customers[start], path.customers[start + 1]);
+      time += distance(path[start], path[start + 1]);
       ++start;
-    } while (path.customers[start] != 0);
+    } while (path[start] != 0);
 
-    std::cout << path.customers[start] << std::endl << std::endl;
-    time += distance(path.customers[start], 0);
+    time += distance(path[start], 0);
 
     return time;
   }
@@ -275,35 +250,6 @@ private:
   double distance(u64 i, u64 j) {
     return std::hypot(customers[i].x - customers[j].x,
                       customers[i].y - customers[j].y);
-  }
-
-  // ->> max
-  double profitability(u64 start, u64 end, i64 open_time, i64 close_time,
-                       i64 capacity) {
-    double d = distance(start, end);
-    double ret = 0.0;
-    open_time = (open_time <= 0) ? 1 : open_time;
-
-    if (d == 0)
-      return 0;
-
-    if (capacity >= vehicle_capacity / 3 && end == 0)
-      return 0;
-
-    if (close_time - d > 0) {
-      ret = 1.0 / (open_time) + 1.0 * max_distance / d;
-
-      if (capacity > customers[end].demand)
-        ret += 1.0;
-      else {
-        if (customers[end].demand != 0)
-          ret += 1.0 * capacity / customers[end].demand;
-        else if (capacity == 0)
-          return 100;
-      }
-    }
-
-    return ret;
   }
 
   std::pair<u64, u64> generate_distance_matrix() {
