@@ -7,12 +7,15 @@
 #include <sstream>
 #include <list>
 #include <unordered_set>
+#include <unordered_map>
 #include <cassert>
+#include <filesystem>
 
 #include <SFML/Graphics.hpp>
 
 using u64 = std::uint64_t;
 using i64 = std::int64_t;
+using path_map_t = std::unordered_map<std::size_t, std::string>;
 
 class vrp_data_storage {
   struct customer_description_t {
@@ -259,6 +262,24 @@ sf::RenderWindow &init_window(double size) {
   return window;
 }
 
+auto get_map(std::string path) {
+  path_map_t map;
+
+  std::size_t i = 0;
+  for (auto entry : std::filesystem::directory_iterator(path))
+    map[i++] = entry.path().string();
+
+  return map;
+}
+
+void print_choice(path_map_t &map) {
+  std::size_t i = -1;
+  std::cout << std::endl;
+  while (++i != map.size())
+    std::cout << "#" << i << ": " << map[i] << std::endl;
+  std::cout << std::endl;
+}
+
 int main() {
   vrp_data_storage vrp;
 
@@ -268,16 +289,37 @@ int main() {
 
   auto &window = init_window(1.5);
 
+  auto regular_map = get_map("..\\input");
+  auto bonus_map = get_map("..\\bonus");
+  std::reference_wrapper<path_map_t> current_map = regular_map;
+
+  bool bonus = false;
   sf::Event event;
   while (window.isOpen()) {
+    window.clear(sf::Color::Black);
     vrp.draw(window);
 
     while (window.pollEvent(event)) {
       switch (event.type) {
 
       case sf::Event::KeyPressed:
-        if (event.key.code == sf::Keyboard::Space)
+        if (event.key.code == sf::Keyboard::Space) // change colors
           vrp.draw(window, true);
+        else if (event.key.code == sf::Keyboard::P) { // print
+          print_choice(current_map);
+        } else if (event.key.code == sf::Keyboard::B) { // flip bonus
+          bonus ^= true;
+          current_map = bonus ? bonus_map : regular_map;
+          std::cout << (bonus ? "bonus tasks" : "regular tasks") << std::endl;
+        } else if (event.key.code >= sf::Keyboard::Num0 &&
+                   event.key.code <= sf::Keyboard::Num9) {
+          std::size_t n = event.key.code - sf::Keyboard::Num0;
+          std::string path = current_map.get()[n];
+          std::cout << "selected "
+                    << std::filesystem::path(path).stem().string() << std::endl;
+          vrp.read_data(path);
+          vrp.generate_initial_solution(vrp_data_storage::Heuristics::Greedy);
+        }
 
         break;
 
