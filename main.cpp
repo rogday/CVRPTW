@@ -136,6 +136,14 @@ public:
     return ret;
   }
 
+  void sanity_check() {
+    bool is_ok = true;
+    for (auto &path : paths)
+      if (!path.empty())
+        is_ok &= valid_path(path);
+    assert(is_ok);
+  }
+
 private:
   void clear() {
     max_x = max_y = std::numeric_limits<i64>::min();
@@ -146,25 +154,59 @@ private:
     paths.clear();
   }
 
-  std::pair<i64, i64> find_best_neighbour(std::unordered_set<u64> &set,
-                                          path_t &path, i64 current_time,
-                                          i64 capacity) {
+  auto create_set() {
+    std::unordered_set<u64> set;
+    for (u64 i = 1; i < customers.size(); ++i)
+      set.insert(i);
+
+    return set;
+  }
+
+  double can_be_neighbour(double current_time, u64 old_one, u64 new_one,
+                          i64 capacity) {
+    i64 warehouse_closing = customers[0].due_date;
+
+    // distance from current to new + current time + await time
+    double time = current_time + distance(old_one, new_one);
+    time += std::max(customers[new_one].ready_time - time, 0.0);
+
+    double time_served = time + customers[new_one].service_time;
+
+    // if we CAN go to the new location and not end up getting late for
+    // warehouse closing and we can fullfill the needs of a client
+    if (time_served <= warehouse_closing - distance(new_one, 0) &&
+        time <= customers[new_one].due_date &&
+        capacity >= customers[new_one].demand)
+      return time_served;
+
+    return -1.0;
+  }
+
+  void update_variables(std::unordered_set<u64> &set, u64 index,
+                        double &current_time, double new_time, i64 &capacity) {
+    current_time = new_time;
+    set.erase(index);
+    capacity -= customers[index].demand;
+  }
+
+  void insert_customer_to_path(path_t &path, std::unordered_set<u64> &set,
+                               u64 index, double &current_time, double new_time,
+                               i64 &capacity) {
+    update_variables(set, index, current_time, new_time, capacity);
+    path.push_back(index);
+  }
+
+  std::pair<i64, double> find_best_neighbour(std::unordered_set<u64> &set,
+                                             path_t &path, double current_time,
+                                             i64 capacity) {
     i64 next = -1, warehouse_closing = customers[0].due_date;
     double min_time = std::numeric_limits<double>::max();
 
     for (u64 i : set) {
-      // distance from current to new + current time + await time
-      double time = current_time + distance(path.back(), i);
-      time += std::max(customers[i].ready_time - time, 0.0);
+      double time = can_be_neighbour(current_time, path.back(), i, capacity);
 
-      double time_served = time + customers[i].service_time;
-
-      // if we CAN go to the new location and not end up getting late for
-      // warehouse closing and we can fullfill the needs of a client
-      if (time_served <= warehouse_closing - distance(i, 0) &&
-          time <= customers[i].due_date && capacity >= customers[i].demand &&
-          time_served < min_time) {
-        min_time = time_served;
+      if (time >= 0 && time < min_time) {
+        min_time = time;
         next = i;
       }
     }
@@ -173,14 +215,12 @@ private:
   }
 
   void greedy_heuristics() {
-    std::unordered_set<u64> set;
-    for (u64 i = 0; i < customers.size(); ++i)
-      set.insert(i);
+    auto set = create_set();
 
     i64 warehouse_closing = customers[0].due_date;
 
     for (auto &path : paths) {
-      i64 current_time = 0;
+      double current_time = 0;
       i64 capacity = vehicle_capacity;
 
       path.push_back(0);
@@ -188,22 +228,37 @@ private:
         auto [next, min_time] =
             find_best_neighbour(set, path, current_time, capacity);
 
-        if (next != -1) { // insertion
-          current_time = min_time;
-          set.erase(next);
-          capacity -= customers[next].demand;
-          path.push_back(next);
-        } else
+        if (next != -1)
+          insert_customer_to_path(path, set, next, current_time, min_time,
+                                  capacity);
+        else
           break;
       }
 
       if (path.size() != 1) // heading back to the depot
         path.push_back(0);
-      else
+      else {
+        path.clear();
         break;
+      }
     }
 
     assert(set.empty());
+  }
+
+  bool valid_path(path_t &path) {
+    auto set = create_set();
+    double current_time = 0;
+    i64 capacity = vehicle_capacity;
+
+    for (std::size_t i = 0; i < path.size() - 1; ++i) {
+      double time =
+          can_be_neighbour(current_time, path[i], path[i + 1], capacity);
+      if (time < 0)
+        return false;
+      update_variables(set, path[i + 1], current_time, time, capacity);
+    }
+    return true;
   }
 
   void perturbation(u64 path) {}
@@ -282,7 +337,7 @@ void print_choice(path_map_t &map) {
 int main() {
   vrp_data_storage vrp;
 
-  vrp.read_data("..\\input\\C108.txt");
+  vrp.read_data("..\\input\\R146.txt");
   vrp.generate_initial_solution(vrp_data_storage::Heuristics::Greedy);
   vrp.local_search();
 
@@ -302,12 +357,12 @@ int main() {
       switch (event.type) {
 
       case sf::Event::KeyPressed:
-        if (event.key.code == sf::Keyboard::Escape) { // change colors
+        if (event.key.code == sf::Keyboard::Escape) { //  esc = close
           window.close();
         }
         if (event.key.code == sf::Keyboard::Space) { // change colors
           vrp.draw(window, true);
-
+          vrp.sanity_check();
         } else if (event.key.code == sf::Keyboard::P) { // print
           print_choice(current_map);
         } else if (event.key.code == sf::Keyboard::B) { // flip bonus
