@@ -25,12 +25,12 @@ class vrp_data_storage {
 
     friend std::ostream &operator<<(std::ostream &o,
                                     customer_description_t const &customer) {
-      return o << "NO:\t\t" << customer.identificator << "\n"
-               << "XC: \t\t" << customer.x << "\n"
-               << "YC: \t\t" << customer.y << "\n"
-               << "DEMAND: \t" << customer.demand << "\n"
-               << "READY TIME: \t" << customer.ready_time << "\n"
-               << "SERVICE TIME: \t" << customer.due_date << "\n";
+      return o << "customer{\nid:\t\t" << customer.identificator << "\n"
+               << "x: \t\t" << customer.x << "\n"
+               << "y: \t\t" << customer.y << "\n"
+               << "demand: \t" << customer.demand << "\n"
+               << "ready time: \t" << customer.ready_time << "\n"
+               << "service time: \t" << customer.due_date << "\n}\n";
     }
   };
 
@@ -134,6 +134,32 @@ private:
     paths.clear();
   }
 
+  std::pair<i64, i64> find_best_neighbour(std::unordered_set<u64> &set,
+                                          path_t &path, i64 current_time,
+                                          i64 capacity) {
+    i64 next = -1, warehouse_closing = customers[0].due_date;
+    double min_time = std::numeric_limits<double>::max();
+
+    for (u64 i : set) {
+      // distance from current to new + current time + time of service +
+      // await time
+      i64 tmp = current_time + distance(path.back(), i);
+      tmp += std::max(customers[i].ready_time - tmp, 0ll) +
+             customers[i].service_time;
+
+      // if we CAN go to the new location and not end up getting late for
+      // warehouse closing and we can fullfill the needs of a client
+      if (tmp <= warehouse_closing - distance(i, 0) &&
+          tmp <= customers[i].due_date && capacity >= customers[i].demand &&
+          tmp < min_time) {
+        min_time = tmp;
+        next = i;
+      }
+    }
+
+    return {next, min_time};
+  }
+
   void greedy_heuristics() {
     std::unordered_set<u64> set;
     for (u64 i = 0; i < customers.size(); ++i)
@@ -142,45 +168,19 @@ private:
     i64 warehouse_closing = customers[0].due_date;
 
     for (auto &path : paths) {
-
       i64 current_time = 0;
       i64 capacity = vehicle_capacity;
 
       path.push_back(0);
-
       while (current_time < warehouse_closing) {
-        i64 next = -1;
-        double min_time = std::numeric_limits<double>::max();
-
-        for (u64 i : set) {
-          // distance from current to new + current time + time of service +
-          // await time
-          i64 tmp = current_time + distance(path.back(), i);
-          tmp += std::max(customers[i].ready_time - tmp, 0ll) +
-                 customers[i].service_time;
-
-          // if we CAN go to the new location and not end up getting late for
-          // warehouse closing and we can fullfill the needs of a client
-          if (tmp <= warehouse_closing - distance(i, 0) &&
-              tmp <= customers[i].due_date && capacity >= customers[i].demand &&
-              tmp < min_time) {
-            min_time = tmp;
-            next = i;
-          }
-        }
+        auto [next, min_time] =
+            find_best_neighbour(set, path, current_time, capacity);
 
         if (next != -1) { // insertion
           current_time = min_time;
           set.erase(next);
           capacity -= customers[next].demand;
           path.push_back(next);
-
-          if (false) {
-            std::cout << ", time: " << current_time
-                      << ", distance: " << distance(path.back(), next)
-                      << ", capacity: " << capacity << ", i=" << path.back()
-                      << ", j=" << next << std::endl;
-          }
         } else
           break;
       }
@@ -243,48 +243,51 @@ private:
   std::vector<path_t> paths;
 };
 
-int main() {
-  vrp_data_storage vrp;
-  vrp.read_data("..\\input\\R168.txt");
-  vrp.generate_initial_solution(vrp_data_storage::Heuristics::Greedy);
+sf::RenderWindow &init_window(double size) {
+  sf::VideoMode vm = sf::VideoMode::getDesktopMode();
 
-  vrp.local_search();
+  static sf::RenderWindow window(
+      sf::VideoMode(int(vm.width / size), int(vm.height / size)), "Test.",
+      sf::Style::Titlebar | sf::Style::Close | sf::Style::Resize);
 
-  using namespace sf;
-
-  VideoMode vm = VideoMode::getDesktopMode();
-
-  double size = 1.5;
-
-  RenderWindow window(VideoMode(int(vm.width / size), int(vm.height / size)),
-                      "Test.", Style::Titlebar | Style::Close | Style::Resize);
-
-  window.setPosition(Vector2i(vm.width / 2 - vm.width / (size * 2),
-                              vm.height / 2 - vm.height / (size * 2)));
+  window.setPosition(sf::Vector2i(vm.width / 2 - vm.width / (size * 2),
+                                  vm.height / 2 - vm.height / (size * 2)));
 
   window.setKeyRepeatEnabled(true);
   window.setVerticalSyncEnabled(true);
 
-  Event event;
+  return window;
+}
+
+int main() {
+  vrp_data_storage vrp;
+
+  vrp.read_data("..\\input\\R168.txt");
+  vrp.generate_initial_solution(vrp_data_storage::Heuristics::Greedy);
+  vrp.local_search();
+
+  auto &window = init_window(1.5);
+
+  sf::Event event;
   while (window.isOpen()) {
     vrp.draw(window);
 
     while (window.pollEvent(event)) {
       switch (event.type) {
 
-      case Event::KeyPressed:
-        if (event.key.code == Keyboard::Space)
+      case sf::Event::KeyPressed:
+        if (event.key.code == sf::Keyboard::Space)
           vrp.draw(window, true);
 
         break;
 
-      case Event::Closed:
+      case sf::Event::Closed:
         window.close();
         break;
 
-      case Event::Resized:
-        FloatRect visibleArea(0, 0, event.size.width, event.size.height);
-        window.setView(View(visibleArea));
+      case sf::Event::Resized:
+        sf::FloatRect visibleArea(0, 0, event.size.width, event.size.height);
+        window.setView(sf::View(visibleArea));
         break;
       }
     }
