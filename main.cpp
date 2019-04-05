@@ -283,11 +283,47 @@ private:
 
   // a -> b -> c   >  a -> e -> f
   // d -> e -> f   >  d -> b -> c
-  void cross(path_t &p1, path_t &p2, iter_t to, iter_t from) {
-    p1.splice(to, p2, from, std::end(p2));
+  void cross(path_t &p1, path_t &p2, iter_t in, iter_t from, iter_t to) {
+    p1.splice(in, p2, from, to);
   }
 
-  void local_search() {}
+  void local_search() {
+    double current_distance, min_distance = overall_distance();
+    for (auto &p1 : paths)
+      for (auto &p2 : paths)
+        if (!p1.empty() && !p2.empty()) {
+          auto best1 = p1;
+          auto best2 = p2;
+
+          current_distance =
+              min_distance - estimate_time(p1) - estimate_time(p2);
+
+          for (iter_t i = std::next(std::begin(p1));
+               i != std::prev(std::end(p1)); ++i)
+            for (iter_t j = std::next(std::begin(p2));
+                 j != std::prev(std::end(p2)); ++j) {
+
+              path_t new_p1(std::begin(p1), i);
+              path_t new_p2(std::begin(p2), j);
+
+              new_p1.insert(std::end(new_p1), j, std::end(p2));
+              new_p2.insert(std::end(new_p2), i, std::end(p1));
+
+              if (valid_path(new_p1) && valid_path(new_p2)) {
+                double tmp = current_distance + estimate_time(new_p1) +
+                             estimate_time(new_p2);
+                if (tmp < min_distance) {
+                  std::cout << "new_min: " << min_distance << std::endl;
+                  min_distance = tmp;
+                  best1 = std::move(new_p1);
+                  best2 = std::move(new_p2);
+                }
+              }
+            }
+          p1 = best1;
+          p2 = best2;
+        }
+  }
 
   void perturbation(u64 path) {}
 
@@ -388,6 +424,7 @@ int main() {
         }
         if (event.key.code == sf::Keyboard::Space) { // change colors
           vrp.draw(window, true);
+          vrp.perform_local_search();
         } else if (event.key.code == sf::Keyboard::P) { // print
           print_choice(current_map);
         } else if (event.key.code == sf::Keyboard::B) { // flip bonus
@@ -407,9 +444,11 @@ int main() {
           vrp.read_data(path);
           vrp.generate_initial_solution(vrp_data_storage::Heuristics::Greedy);
 
-          std::cout << "#" << n << " "
-                    << std::filesystem::path(path).stem().string() << ": "
-                    << vrp.overall_distance() << std::endl;
+          std::string name = std::filesystem::path(path).stem().string() +
+                             ": " + std::to_string(vrp.overall_distance());
+
+          window.setTitle(name);
+          std::cout << "#" << n << ": " << name << std::endl;
         }
 
         break;
