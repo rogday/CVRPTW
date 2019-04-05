@@ -79,6 +79,8 @@ public:
       std::cerr << "Wrong type." << std::endl;
       break;
     }
+
+    sanity_check();
   }
 
   void draw(sf::RenderWindow &window, bool new_colors = false) {
@@ -339,7 +341,6 @@ int main() {
 
   vrp.read_data("..\\input\\R146.txt");
   vrp.generate_initial_solution(vrp_data_storage::Heuristics::Greedy);
-  vrp.local_search();
 
   auto &window = init_window(1.5);
 
@@ -362,7 +363,6 @@ int main() {
         }
         if (event.key.code == sf::Keyboard::Space) { // change colors
           vrp.draw(window, true);
-          vrp.sanity_check();
         } else if (event.key.code == sf::Keyboard::P) { // print
           print_choice(current_map);
         } else if (event.key.code == sf::Keyboard::B) { // flip bonus
