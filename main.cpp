@@ -37,7 +37,8 @@ class vrp_data_storage {
     }
   };
 
-  using path_t = std::vector<u64>;
+  using path_t = std::list<u64>;
+  using iter_t = path_t::iterator;
 
 public:
   enum Heuristics { Greedy = 0 };
@@ -127,13 +128,14 @@ public:
     window.display();
   }
 
-  void local_search() {}
+  void perform_local_search() { local_search(); }
 
   double overall_distance() {
     double ret = 0.0;
 
     for (auto &path : paths)
-      ret += estimate_time(path);
+      if (!path.empty())
+        ret += estimate_time(path);
 
     return ret;
   }
@@ -253,23 +255,47 @@ private:
     double current_time = 0;
     i64 capacity = vehicle_capacity;
 
-    for (std::size_t i = 0; i < path.size() - 1; ++i) {
+    for (auto it = std::begin(path); it != std::prev(std::end(path)); ++it) {
       double time =
-          can_be_neighbour(current_time, path[i], path[i + 1], capacity);
+          can_be_neighbour(current_time, *it, *std::next(it), capacity);
       if (time < 0)
         return false;
-      update_variables(set, path[i + 1], current_time, time, capacity);
+      update_variables(set, *std::next(it), current_time, time, capacity);
     }
+
     return true;
   }
+
+  // a -> b -> c   >  a -> c -> b
+  // everyone says it's garbage, so I'll skip it for now
+  // void two_opt(){};
+
+  // a -> b -> c   >  a -> b -> e -> c
+  // d -> e -> f   >  d -> f
+  void relocate(path_t &p1, path_t &p2, iter_t to, iter_t &from) {
+    p1.insert(to, *from);
+    from = p2.erase(from);
+  }
+
+  // a -> b -> c   >  a -> e -> c
+  // d -> e -> f   >  d -> f -> b
+  void exchange(iter_t to, iter_t from) { std::swap(*to, *from); }
+
+  // a -> b -> c   >  a -> e -> f
+  // d -> e -> f   >  d -> b -> c
+  void cross(path_t &p1, path_t &p2, iter_t to, iter_t from) {
+    p1.splice(to, p2, from, std::end(p2));
+  }
+
+  void local_search() {}
 
   void perturbation(u64 path) {}
 
   double estimate_time(path_t &path) {
     double time = 0.0;
 
-    for (std::size_t i = 0; i + 1 < path.size(); ++i)
-      time += distance(path[i], path[i + 1]);
+    for (auto it = std::begin(path); it != std::prev(std::end(path)); ++it)
+      time += distance(*it, *std::next(it));
 
     return time;
   }
@@ -284,7 +310,6 @@ private:
 
     for (std::size_t i = 0; i < size; ++i)
       for (std::size_t j = i; j < size; ++j) {
-
         max_x = std::max(max_x, customers[i].x);
         max_y = std::max(max_y, customers[i].y);
 
