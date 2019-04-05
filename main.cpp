@@ -15,7 +15,7 @@
 
 using u64 = std::uint64_t;
 using i64 = std::int64_t;
-using path_map_t = std::unordered_map<std::size_t, std::string>;
+using path_map_t = std::vector<std::string>;
 
 class vrp_data_storage {
   struct customer_description_t {
@@ -125,7 +125,16 @@ public:
     window.display();
   }
 
-  void local_search() { std::cout << overall_distance() << std::endl; }
+  void local_search() {}
+
+  double overall_distance() {
+    double ret = 0.0;
+
+    for (auto &path : paths)
+      ret += estimate_time(path);
+
+    return ret;
+  }
 
 private:
   void clear() {
@@ -144,18 +153,18 @@ private:
     double min_time = std::numeric_limits<double>::max();
 
     for (u64 i : set) {
-      // distance from current to new + current time + time of service +
-      // await time
-      i64 tmp = current_time + distance(path.back(), i);
-      tmp += std::max(customers[i].ready_time - tmp, 0ll) +
-             customers[i].service_time;
+      // distance from current to new + current time + await time
+      double time = current_time + distance(path.back(), i);
+      time += std::max(customers[i].ready_time - time, 0.0);
+
+      double time_served = time + customers[i].service_time;
 
       // if we CAN go to the new location and not end up getting late for
       // warehouse closing and we can fullfill the needs of a client
-      if (tmp <= warehouse_closing - distance(i, 0) &&
-          tmp <= customers[i].due_date && capacity >= customers[i].demand &&
-          tmp < min_time) {
-        min_time = tmp;
+      if (time_served <= warehouse_closing - distance(i, 0) &&
+          time <= customers[i].due_date && capacity >= customers[i].demand &&
+          time_served < min_time) {
+        min_time = time_served;
         next = i;
       }
     }
@@ -188,25 +197,16 @@ private:
           break;
       }
 
-      if (path.size() > 1) // heading back to the depot
+      if (path.size() != 1) // heading back to the depot
         path.push_back(0);
-
-      if (set.empty())
+      else
         break;
     }
+
     assert(set.empty());
   }
 
   void perturbation(u64 path) {}
-
-  double overall_distance() {
-    double ret = 0.0;
-
-    for (auto &path : paths)
-      ret += estimate_time(path);
-
-    return ret;
-  }
 
   double estimate_time(path_t &path) {
     double time = 0.0;
@@ -250,7 +250,7 @@ sf::RenderWindow &init_window(double size) {
   sf::VideoMode vm = sf::VideoMode::getDesktopMode();
 
   static sf::RenderWindow window(
-      sf::VideoMode(int(vm.width / size), int(vm.height / size)), "Test.",
+      sf::VideoMode(int(vm.width / size), int(vm.height / size)), "CVRPTW",
       sf::Style::Titlebar | sf::Style::Close | sf::Style::Resize);
 
   window.setPosition(sf::Vector2i(vm.width / 2 - vm.width / (size * 2),
@@ -265,9 +265,8 @@ sf::RenderWindow &init_window(double size) {
 auto get_map(std::string path) {
   path_map_t map;
 
-  std::size_t i = 0;
   for (auto entry : std::filesystem::directory_iterator(path))
-    map[i++] = entry.path().string();
+    map.push_back(entry.path().string());
 
   return map;
 }
@@ -283,7 +282,7 @@ void print_choice(path_map_t &map) {
 int main() {
   vrp_data_storage vrp;
 
-  vrp.read_data("..\\input\\R168.txt");
+  vrp.read_data("..\\input\\C108.txt");
   vrp.generate_initial_solution(vrp_data_storage::Heuristics::Greedy);
   vrp.local_search();
 
@@ -303,22 +302,34 @@ int main() {
       switch (event.type) {
 
       case sf::Event::KeyPressed:
-        if (event.key.code == sf::Keyboard::Space) // change colors
+        if (event.key.code == sf::Keyboard::Escape) { // change colors
+          window.close();
+        }
+        if (event.key.code == sf::Keyboard::Space) { // change colors
           vrp.draw(window, true);
-        else if (event.key.code == sf::Keyboard::P) { // print
+
+        } else if (event.key.code == sf::Keyboard::P) { // print
           print_choice(current_map);
         } else if (event.key.code == sf::Keyboard::B) { // flip bonus
+
           bonus ^= true;
           current_map = bonus ? bonus_map : regular_map;
           std::cout << (bonus ? "bonus tasks" : "regular tasks") << std::endl;
+
         } else if (event.key.code >= sf::Keyboard::Num0 &&
                    event.key.code <= sf::Keyboard::Num9) {
+
           std::size_t n = event.key.code - sf::Keyboard::Num0;
+          if (n >= current_map.get().size())
+            break;
+
           std::string path = current_map.get()[n];
-          std::cout << "selected "
-                    << std::filesystem::path(path).stem().string() << std::endl;
           vrp.read_data(path);
           vrp.generate_initial_solution(vrp_data_storage::Heuristics::Greedy);
+
+          std::cout << "#" << n << " "
+                    << std::filesystem::path(path).stem().string() << ": "
+                    << vrp.overall_distance() << std::endl;
         }
 
         break;
