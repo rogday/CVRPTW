@@ -14,22 +14,6 @@
 using u64 = std::uint64_t;
 using i64 = std::int64_t;
 
-namespace {
-
-template <typename T, typename U>
-std::ostream &operator<<(std::ostream &o, std::pair<T, U> const &pair) {
-  return o << pair.first << " " << pair.second;
-}
-
-template <typename T>
-std::ostream &operator<<(std::ostream &o, std::vector<T> const &vector) {
-  for (auto const &element : vector)
-    o << element << std::endl << std::endl;
-  return o;
-}
-
-} // namespace
-
 class vrp_data_storage {
   struct customer_description_t {
 
@@ -82,7 +66,7 @@ public:
   }
 
   void generate_initial_solution(Heuristics heuristics = Heuristics::Greedy) {
-    generate_distance_matrix();
+    find_world_bounds();
 
     switch (heuristics) {
     case Heuristics::Greedy:
@@ -138,7 +122,7 @@ public:
     window.display();
   }
 
-  void local_search() { perturbation(12); }
+  void local_search() { std::cout << overall_distance() << std::endl; }
 
 private:
   void clear() {
@@ -147,8 +131,6 @@ private:
 
     vehicle_amount = vehicle_capacity = 0;
     customers.clear();
-    max_distance = 0.0;
-    distance_matrix.clear();
     paths.clear();
   }
 
@@ -161,14 +143,14 @@ private:
 
     for (auto &path : paths) {
 
-      i64 current_time = 0, new_time = 0;
+      i64 current_time = 0;
       i64 capacity = vehicle_capacity;
 
       path.push_back(0);
 
       while (current_time < warehouse_closing) {
         i64 next = -1;
-        double min_dist = std::numeric_limits<double>::max();
+        double min_time = std::numeric_limits<double>::max();
 
         for (u64 i : set) {
           // distance from current to new + current time + time of service +
@@ -180,20 +162,15 @@ private:
           // if we CAN go to the new location and not end up getting late for
           // warehouse closing and we can fullfill the needs of a client
           if (tmp <= warehouse_closing - distance(i, 0) &&
-              tmp <= customers[i].due_date && capacity >= customers[i].demand) {
-            double dist = distance(path.back(), i);
-
-            if (dist < min_dist) {
-              new_time = tmp;
-              min_dist = dist;
-              next = i;
-              break;
-            }
+              tmp <= customers[i].due_date && capacity >= customers[i].demand &&
+              tmp < min_time) {
+            min_time = tmp;
+            next = i;
           }
         }
 
         if (next != -1) { // insertion
-          current_time = new_time;
+          current_time = min_time;
           set.erase(next);
           capacity -= customers[next].demand;
           path.push_back(next);
@@ -217,32 +194,22 @@ private:
     assert(set.empty());
   }
 
-  void perturbation(u64 path) {
-    double acc = 0;
-    int s = 1;
+  void perturbation(u64 path) {}
 
-    for (u64 i = 0, k = 0; i < paths.size(); ++i) {
-      if (i != path && !paths[i].empty()) {
-        ++s;
-        while (k != paths[i].size() - 1) {
-          double t = estimate_time(paths[i], k);
-          acc += t;
-        }
-        k = 0;
-      }
-    }
-    std::cout << acc << " vehicles: " << s << std::endl;
+  double overall_distance() {
+    double ret = 0.0;
+
+    for (auto &path : paths)
+      ret += estimate_time(path);
+
+    return ret;
   }
 
-  double estimate_time(path_t &path, u64 &start) {
+  double estimate_time(path_t &path) {
     double time = 0.0;
 
-    do {
-      time += distance(path[start], path[start + 1]);
-      ++start;
-    } while (path[start] != 0);
-
-    time += distance(path[start], 0);
+    for (std::size_t i = 0; i + 1 < path.size(); ++i)
+      time += distance(path[i], path[i + 1]);
 
     return time;
   }
@@ -252,55 +219,33 @@ private:
                       customers[i].y - customers[j].y);
   }
 
-  std::pair<u64, u64> generate_distance_matrix() {
+  void find_world_bounds() {
     std::uint64_t size = customers.size();
-
-    distance_matrix.resize(size);
-    std::fill(distance_matrix.begin(), distance_matrix.end(),
-              std::vector<double>(size, 0.0));
-
-    u64 start = 0, end = 0;
 
     for (std::size_t i = 0; i < size; ++i)
       for (std::size_t j = i; j < size; ++j) {
-        double d = std::sqrt(std::pow(customers[i].x - customers[j].x, 2) +
-                             std::pow(customers[i].y - customers[j].y, 2));
-        distance_matrix[i][j] = distance_matrix[j][i] = d;
 
         max_x = std::max(max_x, customers[i].x);
         max_y = std::max(max_y, customers[i].y);
 
         min_x = std::min(min_x, customers[i].x);
         min_y = std::min(min_y, customers[i].y);
-
-        if (d > max_distance) {
-          max_distance = d;
-          start = i;
-          end = j;
-        }
       }
-
-    return {start, end};
   }
 
   u64 vehicle_amount;
   u64 vehicle_capacity;
   std::vector<customer_description_t> customers;
 
-  double max_distance;
   i64 max_x, min_x;
   i64 max_y, min_y;
-
-  std::vector<std::vector<double>> distance_matrix;
 
   std::vector<path_t> paths;
 };
 
 int main() {
-  srand(time(nullptr));
-
   vrp_data_storage vrp;
-  vrp.read_data("..\\input\\C108.txt");
+  vrp.read_data("..\\input\\R168.txt");
   vrp.generate_initial_solution(vrp_data_storage::Heuristics::Greedy);
 
   vrp.local_search();
