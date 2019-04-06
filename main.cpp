@@ -169,14 +169,14 @@ private:
     i64 warehouse_closing = customers[0].due_date;
 
     // distance from current to new + current time + await time
-    double time = current_time + distance(old_one, new_one);
+    double time = current_time + dist[old_one][new_one];
     time += std::max(customers[new_one].ready_time - time, 0.0);
 
     double time_served = time + customers[new_one].service_time;
 
     // if we CAN go to the new location and not end up getting late for
     // warehouse closing and we can fullfill the needs of a client
-    if (time_served <= warehouse_closing - distance(new_one, 0) &&
+    if (time_served <= warehouse_closing - dist[new_one][0] &&
         time <= customers[new_one].due_date &&
         capacity >= customers[new_one].demand)
       return time_served;
@@ -288,6 +288,10 @@ private:
     fill_set();
     double current_distance, min_distance = overall_distance();
 
+    for (u64 i = 0; i < std::size(paths); ++i)
+      for (u64 j = i + 1; j < std::size(paths); ++j) {
+      }
+
     for (auto &p1 : paths)
       for (auto &p2 : paths)
         if (p1 != p2) {
@@ -297,16 +301,16 @@ private:
           current_distance =
               min_distance - estimate_time(p1) - estimate_time(p2);
 
-          for (iter_t i = std::next(std::begin(p1));
-               i != std::prev(std::end(p1)); ++i)
-            for (iter_t j = std::next(std::begin(p2));
-                 j != std::prev(std::end(p2)); ++j) {
+          for (iter_t it = std::next(std::begin(p1));
+               it != std::prev(std::end(p1)); ++it)
+            for (iter_t jt = std::next(std::begin(p2));
+                 jt != std::prev(std::end(p2)); ++jt) {
 
-              path_t new_p1(std::begin(p1), i);
-              path_t new_p2(std::begin(p2), j);
+              path_t new_p1(std::begin(p1), it);
+              path_t new_p2(std::begin(p2), jt);
 
-              new_p1.insert(std::end(new_p1), j, std::end(p2));
-              new_p2.insert(std::end(new_p2), i, std::end(p1));
+              new_p1.insert(std::end(new_p1), jt, std::end(p2));
+              new_p2.insert(std::end(new_p2), it, std::end(p1));
 
               if (valid_path(new_p1) && valid_path(new_p2)) {
                 double tmp = current_distance + estimate_time(new_p1) +
@@ -321,7 +325,10 @@ private:
                   draw();
                 }
               }
-              fill_set();
+              for (auto &c : p1)
+                set.insert(c);
+              for (auto &c : p2)
+                set.insert(c);
             }
           p1 = best1;
           p2 = best2;
@@ -337,21 +344,27 @@ private:
     double time = 0.0;
 
     for (auto it = std::begin(path); it != std::prev(std::end(path)); ++it)
-      time += distance(*it, *std::next(it));
+      time += dist[*it][*std::next(it)];
 
     return time;
   }
 
-  double distance(u64 i, u64 j) {
-    return std::hypot(customers[i].x - customers[j].x,
-                      customers[i].y - customers[j].y);
-  }
+  /*
+    double distance(u64 i, u64 j) {
+      return std::hypot(customers[i].x - customers[j].x,
+                        customers[i].y - customers[j].y);
+    }*/
 
   void find_world_bounds() {
     std::uint64_t size = customers.size();
+    dist.resize(size);
+    std::fill(std::begin(dist), std::end(dist), std::vector<double>(size, 0.0));
 
     for (std::size_t i = 0; i < size; ++i)
       for (std::size_t j = i; j < size; ++j) {
+        dist[i][j] = dist[j][i] = std::hypot(customers[i].x - customers[j].x,
+                                             customers[i].y - customers[j].y);
+
         max_x = std::max(max_x, customers[i].x);
         max_y = std::max(max_y, customers[i].y);
 
@@ -369,6 +382,7 @@ private:
 
   sf::RenderWindow &window;
   std::unordered_set<u64> set;
+  std::vector<std::vector<double>> dist;
 
   std::vector<path_t> paths;
 };
@@ -434,6 +448,7 @@ int main() {
           vrp.draw(true);
         } else if (event.key.code == sf::Keyboard::O) { // optimize
           vrp.perform_local_search();
+          std::cout << "done" << std::endl;
         } else if (event.key.code == sf::Keyboard::P) { // print
           print_choice(current_map);
         } else if (event.key.code == sf::Keyboard::B) { // flip bonus
