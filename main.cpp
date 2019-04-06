@@ -286,17 +286,17 @@ private:
 
   void local_search() {
     fill_set();
-    double current_distance, min_distance = overall_distance();
+    double current_distance, min_distance = overall_distance(), last_distance;
 
-    for (u64 i = 0; i < std::size(paths); ++i)
-      for (u64 j = i + 1; j < std::size(paths); ++j) {
-      }
+    do {
+      last_distance = min_distance;
 
-    for (auto &p1 : paths)
-      for (auto &p2 : paths)
-        if (p1 != p2) {
-          auto best1 = p1;
-          auto best2 = p2;
+      for (u64 i = 0; i < std::size(paths); ++i)
+        for (u64 j = i + 1; j < std::size(paths); ++j) {
+          auto &p1 = paths[i];
+          auto &p2 = paths[j];
+
+          path_t best1 = p1, best2 = p2;
 
           current_distance =
               min_distance - estimate_time(p1) - estimate_time(p2);
@@ -325,14 +325,17 @@ private:
                   draw();
                 }
               }
-              for (auto &c : p1)
+              for (auto c : p1)
                 set.insert(c);
-              for (auto &c : p2)
+              for (auto c : p2)
                 set.insert(c);
             }
           p1 = best1;
           p2 = best2;
         }
+      std::cout << (min_distance / last_distance) << std::endl;
+    } while (1 - min_distance / last_distance > 0.0001);
+
     if (min_distance != overall_distance())
       std::cerr << "min_distance: " << min_distance
                 << ", overall(): " << overall_distance() << std::endl;
