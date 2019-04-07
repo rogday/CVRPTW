@@ -154,13 +154,15 @@ public:
   }
 
   void iterated_local_search() {
-    double old_dist = 0.0, new_dist = 0.0;
+    double old_dist = 0.0, new_dist = overall_distance();
     do {
       old_dist = new_dist;
 
-      new_dist = local_search<Mutation::Cross>();
-      new_dist += local_search<Mutation::Exchange>();
-      new_dist += local_search<Mutation::Relocate>();
+      new_dist = local_search<Mutation::Cross>(new_dist);
+      new_dist = local_search<Mutation::Exchange>(new_dist);
+      new_dist = local_search<Mutation::Relocate>(new_dist);
+
+      new_dist = two_opt_pass(new_dist);
     } while (1.0 - old_dist / new_dist > 0.0001);
   }
 
@@ -297,11 +299,11 @@ private:
 
   // a -> b -> c   >  a -> c -> b
   // everyone says it's garbage, so I'll skip it for now
-  // void two_opt(){};
+  void two_opt(iter_t to, iter_t from) { std::reverse(to, from + 1); };
 
   // a -> b -> c   >  a -> b -> e -> c
   // d -> e -> f   >  d -> f
-  void relocate(path_t &p1, path_t &p2, iter_t to, iter_t &from) {
+  void relocate(path_t &p1, path_t &p2, iter_t to, iter_t from) {
     p1.insert(to, *from);
     p2.erase(from);
   }
@@ -322,9 +324,58 @@ private:
     return {new_p1, new_p2};
   }
 
-  template <Mutation M> double local_search() {
+  double two_opt_pass(double min_distance) { // shity practice, I know
     fill_set();
-    double current_distance, min_distance = overall_distance(), last_distance;
+    double current_distance, last_distance;
+
+    do {
+      last_distance = min_distance;
+
+      for (u64 i = 0; i < std::size(paths); ++i) {
+        auto &p = paths[i];
+
+        path_t best = p;
+        path_t new_p = p;
+
+        current_distance = min_distance - estimate_time(p);
+
+        for (u64 it = 1; it != std::size(p) - 1; ++it)
+          for (u64 jt = it + 1; jt != std::size(p) - 1; ++jt) {
+
+            two_opt(std::begin(new_p) + it, std::begin(new_p) + jt);
+
+            if (valid_path(new_p)) {
+              double tmp = current_distance + estimate_time(new_p);
+
+              if (tmp < min_distance) {
+                min_distance = tmp;
+                std::cout << "new_min: " << min_distance << std::endl;
+
+                best = new_p;
+
+                draw(); // lol, it should be called here
+              }
+            }
+
+            two_opt(std::begin(new_p) + it, std::begin(new_p) + jt);
+
+            for (auto c : p)
+              set.insert(c);
+          }
+        p = best;
+      }
+    } while (1.0 - min_distance / last_distance > 0.0001);
+
+    if (min_distance != overall_distance())
+      std::cerr << "min_distance: " << min_distance
+                << ", overall(): " << overall_distance() << std::endl;
+
+    return min_distance;
+  }
+
+  template <Mutation M> double local_search(double min_distance) {
+    fill_set();
+    double current_distance, last_distance;
 
     do {
       last_distance = min_distance;
