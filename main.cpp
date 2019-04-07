@@ -74,7 +74,6 @@ public:
   }
 
   void save_data() {
-    std::cout << "../output/result_" + filename << std::endl;
     std::fstream fstream{"../output/result_" + filename,
                          std::ios_base::out | std::ios_base::trunc};
 
@@ -368,8 +367,7 @@ private:
                     best1 = new_p1;
                     best2 = new_p2;
                   }
-
-                  draw();
+                  draw(); // lol, it should be called here
                 }
               }
 
