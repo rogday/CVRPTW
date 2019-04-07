@@ -41,12 +41,14 @@ class vrp_data_storage {
 
 public:
   enum Heuristics { Greedy = 0 };
+  enum Mutation { Cross = 0, Exchange, Relocate, TwoOpt };
 
   vrp_data_storage() = default;
   vrp_data_storage(sf::RenderWindow &window) : window(window) {}
 
   void read_data(std::string const &filename) {
     this->clear();
+    this->filename = std::filesystem::path(filename).stem().string();
 
     std::fstream fstream{filename, std::ios_base::in};
     std::string current_line;
@@ -67,6 +69,22 @@ public:
         customers.emplace_back(id, x, y, demand, ready_time, due_date,
                                service_time);
     }
+
+    fstream.close();
+  }
+
+  void save_data() {
+    std::cout << "../output/result_" + filename << std::endl;
+    std::fstream fstream{"../output/result_" + filename,
+                         std::ios_base::out | std::ios_base::trunc};
+
+    for (auto &path : paths) {
+      for (auto &customer : path)
+        fstream << customer << " ";
+      fstream << std::endl;
+    }
+
+    fstream.close();
   }
 
   void generate_initial_solution(Heuristics heuristics = Heuristics::Greedy) {
@@ -97,6 +115,7 @@ public:
 
     sf::Vector2u window_size = window.getSize();
     double zoom = 0.9;
+    float radius = 2.5;
 
     auto world_to_window = [window_size, zoom,
                             this](i64 current_x,
@@ -121,6 +140,11 @@ public:
         auto [x, y] =
             world_to_window(customers[customer].x, customers[customer].y);
 
+        sf::CircleShape circle;
+        circle.setRadius(radius);
+        circle.setPosition(x - radius, y - radius);
+        window.draw(circle);
+
         line[i].position = sf::Vector2f(x, y);
         line[i].color = color;
         ++i;
@@ -130,7 +154,16 @@ public:
     window.display();
   }
 
-  void perform_local_search() { local_search(); }
+  void iterated_local_search() {
+    double old_dist = 0.0, new_dist = 0.0;
+    do {
+      old_dist = new_dist;
+
+      new_dist = local_search<Mutation::Cross>();
+      new_dist += local_search<Mutation::Exchange>();
+      new_dist += local_search<Mutation::Relocate>();
+    } while (1.0 - old_dist / new_dist > 0.0001);
+  }
 
   double overall_distance() {
     double ret = 0.0;
@@ -269,39 +302,14 @@ private:
 
   // a -> b -> c   >  a -> b -> e -> c
   // d -> e -> f   >  d -> f
-  std::pair<path_t, path_t> relocate(path_t &p1, path_t &p2, iter_t to,
-                                     iter_t &from) {
-    path_t new_p1(p1);
-    path_t new_p2(p2);
-
-    auto it = std::begin(new_p1);
-    auto jt = std::begin(new_p2);
-
-    std::advance(it, std::distance(std::begin(p1), to));
-    std::advance(jt, std::distance(std::begin(p2), from));
-
-    new_p1.insert(it, *jt);
-    new_p2.erase(jt);
-
-    return {new_p1, new_p2};
+  void relocate(path_t &p1, path_t &p2, iter_t to, iter_t &from) {
+    p1.insert(to, *from);
+    p2.erase(from);
   }
 
   // a -> b -> c   >  a -> e -> c
   // d -> e -> f   >  d -> f -> b
-  std::pair<path_t, path_t> exchange(path_t &p1, path_t &p2, iter_t to,
-                                     iter_t from) {
-    path_t new_p1(p1);
-    path_t new_p2(p2);
-
-    auto it = std::begin(new_p1);
-    auto jt = std::begin(new_p2);
-
-    std::advance(it, std::distance(std::begin(p1), to));
-    std::advance(jt, std::distance(std::begin(p2), from));
-
-    std::swap(*it, *jt);
-    return {new_p1, new_p2};
-  }
+  void exchange(iter_t to, iter_t from) { std::swap(*to, *from); }
 
   // a -> b -> c   >  a -> e -> f
   // d -> e -> f   >  d -> b -> c
@@ -315,7 +323,7 @@ private:
     return {new_p1, new_p2};
   }
 
-  void local_search() {
+  template <Mutation M> double local_search() {
     fill_set();
     double current_distance, min_distance = overall_distance(), last_distance;
 
@@ -328,18 +336,22 @@ private:
           auto &p2 = paths[j];
 
           path_t best1 = p1, best2 = p2;
+          path_t new_p1 = p1, new_p2 = p2;
 
           current_distance =
               min_distance - estimate_time(p1) - estimate_time(p2);
 
-          for (iter_t it = std::next(std::begin(p1));
-               it != std::prev(std::end(p1)); ++it)
-            for (iter_t jt = std::next(std::begin(p2));
-                 jt != std::prev(std::end(p2)); ++jt) {
+          for (u64 it = 1; it != std::size(p1) - 1; ++it)
+            for (u64 jt = 1; jt != std::size(p2) - 1; ++jt) {
 
-              auto [new_p1, new_p2] = cross(p1, p2, it, jt);
-              // 2//auto [new_p1, new_p2] = exchange(p1, p2, it, jt);
-              // 3//auto [new_p1, new_p2] = relocate(p1, p2, it, jt);
+              if constexpr (M == Mutation::Cross)
+                std::tie(new_p1, new_p2) =
+                    cross(p1, p2, std::begin(p1) + it, std::begin(p2) + jt);
+              else if constexpr (M == Mutation::Exchange)
+                exchange(std::begin(new_p1) + it, std::begin(new_p2) + jt);
+              else if constexpr (M == Mutation::Relocate)
+                relocate(new_p1, new_p2, std::begin(new_p1) + it,
+                         std::begin(new_p2) + jt);
 
               if (valid_path(new_p1) && valid_path(new_p2)) {
                 double tmp = current_distance + estimate_time(new_p1) +
@@ -349,12 +361,23 @@ private:
                   min_distance = tmp;
                   std::cout << "new_min: " << min_distance << std::endl;
 
-                  best1 = std::move(new_p1);
-                  best2 = std::move(new_p2);
+                  if constexpr (M == Mutation::Cross) {
+                    best1 = std::move(new_p1);
+                    best2 = std::move(new_p2);
+                  } else {
+                    best1 = new_p1;
+                    best2 = new_p2;
+                  }
+
                   draw();
                 }
               }
-              // 2//exchange(p1, p2, it, jt);
+
+              if constexpr (M == Mutation::Exchange)
+                exchange(std::begin(new_p1) + it, std::begin(new_p2) + jt);
+              else if constexpr (M == Mutation::Relocate)
+                relocate(new_p2, new_p1, std::begin(new_p2) + jt,
+                         std::begin(new_p1) + it);
 
               for (auto c : p1)
                 set.insert(c);
@@ -364,14 +387,14 @@ private:
           p1 = best1;
           p2 = best2;
         }
-    } while (1 - min_distance / last_distance > 0.0001);
+    } while (1.0 - min_distance / last_distance > 0.0001);
 
     if (min_distance != overall_distance())
       std::cerr << "min_distance: " << min_distance
                 << ", overall(): " << overall_distance() << std::endl;
-  }
 
-  void perturbation(u64 path) {}
+    return min_distance;
+  }
 
   double estimate_time(path_t &path) {
     double time = 0.0;
@@ -381,12 +404,6 @@ private:
 
     return time;
   }
-
-  /*
-    double distance(u64 i, u64 j) {
-      return std::hypot(customers[i].x - customers[j].x,
-                        customers[i].y - customers[j].y);
-    }*/
 
   void find_world_bounds() {
     std::uint64_t size = customers.size();
@@ -414,6 +431,7 @@ private:
   i64 max_y, min_y;
 
   sf::RenderWindow &window;
+  std::string filename;
   std::unordered_set<u64> set;
   std::vector<std::vector<double>> dist;
 
@@ -422,10 +440,12 @@ private:
 
 sf::RenderWindow &init_window(double size) {
   sf::VideoMode vm = sf::VideoMode::getDesktopMode();
+  sf::ContextSettings settings;
+  settings.antialiasingLevel = 8;
 
   static sf::RenderWindow window(
       sf::VideoMode(int(vm.width / size), int(vm.height / size)), "CVRPTW",
-      sf::Style::Titlebar | sf::Style::Close | sf::Style::Resize);
+      sf::Style::Titlebar | sf::Style::Close | sf::Style::Resize, settings);
 
   window.setPosition(sf::Vector2i(vm.width / 2 - vm.width / (size * 2),
                                   vm.height / 2 - vm.height / (size * 2)));
@@ -458,11 +478,11 @@ int main() {
 
   vrp_data_storage vrp(window);
 
-  vrp.read_data("..\\input\\C108.txt");
+  vrp.read_data("../input/C108.txt");
   vrp.generate_initial_solution(vrp_data_storage::Heuristics::Greedy);
 
-  auto regular_map = get_map("..\\input");
-  auto bonus_map = get_map("..\\bonus");
+  auto regular_map = get_map("../input");
+  auto bonus_map = get_map("../bonus");
   std::reference_wrapper<path_map_t> current_map = regular_map;
 
   bool bonus = false;
@@ -480,10 +500,13 @@ int main() {
         if (event.key.code == sf::Keyboard::Space) { // change colors
           vrp.draw(true);
         } else if (event.key.code == sf::Keyboard::O) { // optimize
-          vrp.perform_local_search();
+          vrp.iterated_local_search();
           std::cout << "done" << std::endl;
         } else if (event.key.code == sf::Keyboard::P) { // print
           print_choice(current_map);
+        } else if (event.key.code == sf::Keyboard::S) { // save
+          vrp.save_data();
+          std::cout << "saved" << std::endl;
         } else if (event.key.code == sf::Keyboard::B) { // flip bonus
 
           bonus ^= true;
