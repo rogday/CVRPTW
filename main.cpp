@@ -269,19 +269,50 @@ private:
 
   // a -> b -> c   >  a -> b -> e -> c
   // d -> e -> f   >  d -> f
-  void relocate(path_t &p1, path_t &p2, iter_t to, iter_t &from) {
-    p1.insert(to, *from);
-    from = p2.erase(from);
+  std::pair<path_t, path_t> relocate(path_t &p1, path_t &p2, iter_t to,
+                                     iter_t &from) {
+    path_t new_p1(p1);
+    path_t new_p2(p2);
+
+    auto it = std::begin(new_p1);
+    auto jt = std::begin(new_p2);
+
+    std::advance(it, std::distance(std::begin(p1), to));
+    std::advance(jt, std::distance(std::begin(p2), from));
+
+    new_p1.insert(it, *jt);
+    new_p2.erase(jt);
+
+    return {new_p1, new_p2};
   }
 
   // a -> b -> c   >  a -> e -> c
   // d -> e -> f   >  d -> f -> b
-  void exchange(iter_t to, iter_t from) { std::swap(*to, *from); }
+  std::pair<path_t, path_t> exchange(path_t &p1, path_t &p2, iter_t to,
+                                     iter_t from) {
+    path_t new_p1(p1);
+    path_t new_p2(p2);
+
+    auto it = std::begin(new_p1);
+    auto jt = std::begin(new_p2);
+
+    std::advance(it, std::distance(std::begin(p1), to));
+    std::advance(jt, std::distance(std::begin(p2), from));
+
+    std::swap(*it, *jt);
+    return {new_p1, new_p2};
+  }
 
   // a -> b -> c   >  a -> e -> f
   // d -> e -> f   >  d -> b -> c
-  void cross(path_t &p1, path_t &p2, iter_t in, iter_t from, iter_t to) {
-    // p1.splice(in, p2, from, to);
+  std::pair<path_t, path_t> cross(path_t &p1, path_t &p2, iter_t it,
+                                  iter_t jt) {
+    path_t new_p1(std::begin(p1), it);
+    path_t new_p2(std::begin(p2), jt);
+
+    new_p1.insert(std::end(new_p1), jt, std::end(p2));
+    new_p2.insert(std::end(new_p2), it, std::end(p1));
+    return {new_p1, new_p2};
   }
 
   void local_search() {
@@ -306,11 +337,9 @@ private:
             for (iter_t jt = std::next(std::begin(p2));
                  jt != std::prev(std::end(p2)); ++jt) {
 
-              path_t new_p1(std::begin(p1), it);
-              path_t new_p2(std::begin(p2), jt);
-
-              new_p1.insert(std::end(new_p1), jt, std::end(p2));
-              new_p2.insert(std::end(new_p2), it, std::end(p1));
+              auto [new_p1, new_p2] = cross(p1, p2, it, jt);
+              // 2//auto [new_p1, new_p2] = exchange(p1, p2, it, jt);
+              // 3//auto [new_p1, new_p2] = relocate(p1, p2, it, jt);
 
               if (valid_path(new_p1) && valid_path(new_p2)) {
                 double tmp = current_distance + estimate_time(new_p1) +
@@ -325,6 +354,8 @@ private:
                   draw();
                 }
               }
+              // 2//exchange(p1, p2, it, jt);
+
               for (auto c : p1)
                 set.insert(c);
               for (auto c : p2)
@@ -333,7 +364,6 @@ private:
           p1 = best1;
           p2 = best2;
         }
-      std::cout << (min_distance / last_distance) << std::endl;
     } while (1 - min_distance / last_distance > 0.0001);
 
     if (min_distance != overall_distance())
