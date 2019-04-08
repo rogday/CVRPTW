@@ -48,6 +48,7 @@ public:
 
   void read_data(std::string const &filename) {
     this->clear();
+
     this->filename = std::filesystem::path(filename).stem().string();
 
     std::fstream fstream{filename, std::ios_base::in};
@@ -70,23 +71,60 @@ public:
                                service_time);
     }
 
+    find_world_bounds();
     fstream.close();
+  }
+
+  void check_solutions(path_map_t &map) {
+    for (int i = 0; i < map.size(); ++i) {
+      std::string answer_file_name =
+          "../output/" + std::filesystem::path(map[i]).stem().string() + ".sol";
+      read_data(map[i]);
+      std::cout << map[i] << std::endl;
+
+      std::fstream file{answer_file_name, std::ios_base::in};
+
+      std::string line;
+      u64 customer;
+      double time;
+
+      paths.clear();
+      while (std::getline(file, line)) {
+        paths.push_back(path_t{});
+        std::istringstream iss(line);
+
+        while (iss >> customer >> time)
+          paths.back().emplace_back(customer);
+
+        if (paths.back().empty())
+          paths.resize(paths.size() - 1);
+      }
+
+      std::cout << overall_distance() << std::endl;
+      sanity_check();
+
+      file.close();
+    }
   }
 
   void save_data() {
     std::fstream fstream{"../output/" + filename + ".sol",
                          std::ios_base::out | std::ios_base::trunc};
 
+    fstream.precision(std::numeric_limits<double>::max_digits10);
+
     for (auto &path : paths) {
       double current_time = 0;
       i64 capacity = vehicle_capacity;
       for (auto it = std::begin(path); it != std::prev(std::end(path)); ++it) {
-        fstream << *it << " " << current_time << " ";
+        fstream << *it << " " << current_time - customers[*it].service_time
+                << " ";
         double time =
             can_be_neighbour(current_time, *it, *std::next(it), capacity);
         update_variables(*std::next(it), current_time, time, capacity);
       }
-      fstream << path.back() << " " << current_time << " ";
+      fstream << path.back() << " "
+              << current_time - customers[path.back()].service_time << " ";
       fstream << std::endl;
     }
 
@@ -103,8 +141,6 @@ public:
   }
 
   void generate_initial_solution(Heuristics heuristics = Heuristics::Greedy) {
-    find_world_bounds();
-
     switch (heuristics) {
     case Heuristics::Greedy:
       greedy_heuristics();
@@ -578,6 +614,8 @@ int main() {
           std::cout << "done" << std::endl;
         } else if (event.key.code == sf::Keyboard::P) { // print
           print_choice(current_map);
+        } else if (event.key.code == sf::Keyboard::C) { // check sols
+          vrp.check_solutions(current_map);
         } else if (event.key.code == sf::Keyboard::S) { // save
           vrp.save_data();
           vrp.append_distance();
