@@ -41,7 +41,7 @@ class vrp_data_storage {
 
 public:
   enum Heuristics { Greedy = 0 };
-  enum Mutation { Cross = 0, Exchange, Relocate, TwoOpt };
+  enum Mutation { Cross = 0, Exchange, Relocate, TwoOpt, Swap };
 
   vrp_data_storage() = default;
   vrp_data_storage(sf::RenderWindow &window) : window(window) {}
@@ -89,6 +89,15 @@ public:
       fstream << path.back() << " " << current_time << " ";
       fstream << std::endl;
     }
+
+    fstream.close();
+  }
+
+  void append_distance() {
+    std::fstream fstream{"../output/table.txt",
+                         std::ios_base::out | std::ios_base::app};
+
+    fstream << filename << ": " << overall_distance() << std::endl;
 
     fstream.close();
   }
@@ -165,11 +174,12 @@ public:
     do {
       old_dist = new_dist;
 
-      new_dist = local_search<Mutation::Cross>(new_dist);
-      new_dist = local_search<Mutation::Exchange>(new_dist);
-      new_dist = local_search<Mutation::Relocate>(new_dist);
+      new_dist = local_search_two_paths<Mutation::Cross>(new_dist);
+      new_dist = local_search_two_paths<Mutation::Exchange>(new_dist);
+      new_dist = local_search_two_paths<Mutation::Relocate>(new_dist);
 
-      new_dist = two_opt_pass(new_dist);
+      new_dist = local_search_one_path<Mutation::TwoOpt>(new_dist);
+      new_dist = local_search_one_path<Mutation::Swap>(new_dist);
     } while (1.0 - old_dist / new_dist > 0.0001);
   }
 
@@ -307,6 +317,8 @@ private:
   // a -> b -> c   >  a -> c -> b
   void two_opt(iter_t to, iter_t from) { std::reverse(to, from + 1); };
 
+  void swap(iter_t to, iter_t from) { std::iter_swap(to, from); }
+
   // a -> b -> c   >  a -> b -> e -> c
   // d -> e -> f   >  d -> f
   void relocate(path_t &p1, path_t &p2, iter_t to, iter_t from) {
@@ -330,7 +342,8 @@ private:
     return {new_p1, new_p2};
   }
 
-  double two_opt_pass(double min_distance) { // shity practice, I know
+  template <Mutation M>
+  double local_search_one_path(double min_distance) { // shity practice, I know
     fill_set();
     double current_distance, last_distance;
 
@@ -348,7 +361,10 @@ private:
         for (u64 it = 1; it != std::size(p) - 1; ++it)
           for (u64 jt = it + 1; jt != std::size(p) - 1; ++jt) {
 
-            two_opt(std::begin(new_p) + it, std::begin(new_p) + jt);
+            if constexpr (M == Mutation::TwoOpt)
+              two_opt(std::begin(new_p) + it, std::begin(new_p) + jt);
+            else if constexpr (M == Mutation::Swap)
+              swap(std::begin(new_p) + it, std::begin(new_p) + jt);
 
             if (valid_path(new_p)) {
               double tmp = current_distance + estimate_time(new_p);
@@ -363,7 +379,10 @@ private:
               }
             }
 
-            two_opt(std::begin(new_p) + it, std::begin(new_p) + jt);
+            if constexpr (M == Mutation::TwoOpt)
+              two_opt(std::begin(new_p) + it, std::begin(new_p) + jt);
+            else if constexpr (M == Mutation::Swap)
+              swap(std::begin(new_p) + it, std::begin(new_p) + jt);
 
             for (auto c : p)
               set.insert(c);
@@ -379,7 +398,7 @@ private:
     return min_distance;
   }
 
-  template <Mutation M> double local_search(double min_distance) {
+  template <Mutation M> double local_search_two_paths(double min_distance) {
     fill_set();
     double current_distance, last_distance;
 
@@ -561,6 +580,7 @@ int main() {
           print_choice(current_map);
         } else if (event.key.code == sf::Keyboard::S) { // save
           vrp.save_data();
+          vrp.append_distance();
           std::cout << "saved" << std::endl;
         } else if (event.key.code == sf::Keyboard::B) { // flip bonus
 
