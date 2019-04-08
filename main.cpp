@@ -74,12 +74,19 @@ public:
   }
 
   void save_data() {
-    std::fstream fstream{"../output/result_" + filename,
+    std::fstream fstream{"../output/" + filename + ".sol",
                          std::ios_base::out | std::ios_base::trunc};
 
     for (auto &path : paths) {
-      for (auto &customer : path)
-        fstream << customer << " ";
+      double current_time = 0;
+      i64 capacity = vehicle_capacity;
+      for (auto it = std::begin(path); it != std::prev(std::end(path)); ++it) {
+        fstream << *it << " " << current_time << " ";
+        double time =
+            can_be_neighbour(current_time, *it, *std::next(it), capacity);
+        update_variables(*std::next(it), current_time, time, capacity);
+      }
+      fstream << path.back() << " " << current_time << " ";
       fstream << std::endl;
     }
 
@@ -298,7 +305,6 @@ private:
   }
 
   // a -> b -> c   >  a -> c -> b
-  // everyone says it's garbage, so I'll skip it for now
   void two_opt(iter_t to, iter_t from) { std::reverse(to, from + 1); };
 
   // a -> b -> c   >  a -> b -> e -> c
