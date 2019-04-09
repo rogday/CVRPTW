@@ -16,6 +16,12 @@ using u64 = std::uint64_t;
 using i64 = std::int64_t;
 using path_map_t = std::vector<std::string>;
 
+namespace utility {
+std::string filename_from_path(std::string &path) {
+  return std::filesystem::path(path).stem().string();
+}
+}; // namespace utility
+
 class vrp_data_storage {
   struct customer_description_t {
 
@@ -48,8 +54,7 @@ public:
 
   void read_data(std::string const &filename) {
     this->clear();
-
-    this->filename = std::filesystem::path(filename).stem().string();
+    this->filename = filename;
 
     std::fstream fstream{filename, std::ios_base::in};
     std::string current_line;
@@ -75,35 +80,39 @@ public:
     fstream.close();
   }
 
+  double read_solution(std::string &path) {
+    std::string answer_file_name =
+        "../output/" + utility::filename_from_path(path) + ".sol";
+    std::fstream file{answer_file_name, std::ios_base::in};
+
+    read_data(path);
+
+    std::string line;
+    u64 customer;
+    double time;
+
+    paths.clear();
+    while (std::getline(file, line)) {
+      paths.emplace_back();
+      std::istringstream iss(line);
+
+      while (iss >> customer >> time)
+        paths.back().emplace_back(customer);
+
+      if (paths.back().empty())
+        paths.resize(paths.size() - 1);
+    }
+
+    file.close();
+
+    return overall_distance();
+  }
+
   void check_solutions(path_map_t &map) {
     for (int i = 0; i < map.size(); ++i) {
-      std::string answer_file_name =
-          "../output/" + std::filesystem::path(map[i]).stem().string() + ".sol";
-      read_data(map[i]);
       std::cout << map[i] << std::endl;
-
-      std::fstream file{answer_file_name, std::ios_base::in};
-
-      std::string line;
-      u64 customer;
-      double time;
-
-      paths.clear();
-      while (std::getline(file, line)) {
-        paths.push_back(path_t{});
-        std::istringstream iss(line);
-
-        while (iss >> customer >> time)
-          paths.back().emplace_back(customer);
-
-        if (paths.back().empty())
-          paths.resize(paths.size() - 1);
-      }
-
-      std::cout << overall_distance() << std::endl;
+      std::cout << read_solution(map[i]) << std::endl;
       sanity_check();
-
-      file.close();
     }
   }
 
@@ -595,7 +604,7 @@ int main() {
   auto bonus_map = get_map("../bonus");
   std::reference_wrapper<path_map_t> current_map = regular_map;
 
-  bool bonus = false;
+  bool bonus = false, show_solution = false;
   sf::Event event;
   while (window.isOpen()) {
     vrp.draw();
@@ -614,6 +623,8 @@ int main() {
           std::cout << "done" << std::endl;
         } else if (event.key.code == sf::Keyboard::P) { // print
           print_choice(current_map);
+        } else if (event.key.code == sf::Keyboard::H) { // filp show solution
+          show_solution ^= true;
         } else if (event.key.code == sf::Keyboard::C) { // check sols
           vrp.check_solutions(current_map);
         } else if (event.key.code == sf::Keyboard::S) { // save
@@ -634,14 +645,21 @@ int main() {
             break;
 
           std::string path = current_map.get()[n];
-          vrp.read_data(path);
-          vrp.generate_initial_solution(vrp_data_storage::Heuristics::Greedy);
+          std::string state = "optimized";
 
-          std::string name = std::filesystem::path(path).stem().string() +
-                             ": " + std::to_string(vrp.overall_distance());
+          if (show_solution)
+            vrp.read_solution(path);
+          else {
+            state = "greedy";
+            vrp.read_data(path);
+            vrp.generate_initial_solution(vrp_data_storage::Heuristics::Greedy);
+          }
+
+          std::string name = utility::filename_from_path(path) + ": " +
+                             std::to_string(vrp.overall_distance());
 
           window.setTitle(name);
-          std::cout << "#" << n << ": " << name << std::endl;
+          std::cout << "#" << n << " " << state << " " << name << std::endl;
         }
 
         break;
