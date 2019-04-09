@@ -45,6 +45,8 @@ class vrp_data_storage {
   using path_t = std::vector<u64>;
   using iter_t = path_t::iterator;
 
+  const double eps = 1e-12;
+
 public:
   enum Heuristics { Greedy = 0 };
   enum Mutation { Cross = 0, Exchange, Relocate, TwoOpt, Swap };
@@ -225,7 +227,7 @@ public:
 
       new_dist = local_search_one_path<Mutation::TwoOpt>(new_dist);
       new_dist = local_search_one_path<Mutation::Swap>(new_dist);
-    } while (1.0 - old_dist / new_dist > 0.0001);
+    } while (1.0 - new_dist / old_dist > eps);
   }
 
   double overall_distance() {
@@ -434,7 +436,7 @@ private:
           }
         p = best;
       }
-    } while (1.0 - min_distance / last_distance > 0.0001);
+    } while (1.0 - min_distance / last_distance > eps);
 
     if (min_distance != overall_distance())
       std::cerr << "min_distance: " << min_distance
@@ -506,7 +508,7 @@ private:
           p1 = best1;
           p2 = best2;
         }
-    } while (1.0 - min_distance / last_distance > 0.0001);
+    } while (1.0 - min_distance / last_distance > eps);
 
     if (min_distance != overall_distance())
       std::cerr << "min_distance: " << min_distance
