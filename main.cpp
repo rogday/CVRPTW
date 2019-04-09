@@ -240,7 +240,7 @@ public:
     bool is_ok = true;
     for (auto &path : paths)
       is_ok &= valid_path(path);
-    if (!is_ok)
+    if (!is_ok || !set.empty())
       std::cerr << "sanity_check has failed." << std::endl;
   }
 
