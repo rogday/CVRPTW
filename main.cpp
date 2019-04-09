@@ -613,7 +613,7 @@ int main() {
       switch (event.type) {
 
       case sf::Event::KeyPressed:
-        if (event.key.code == sf::Keyboard::Escape) { //  esc = close
+        if (event.key.code == sf::Keyboard::Escape) { //  close
           window.close();
         }
         if (event.key.code == sf::Keyboard::Space) { // change colors
@@ -638,7 +638,7 @@ int main() {
           std::cout << (bonus ? "bonus tasks" : "regular tasks") << std::endl;
 
         } else if (event.key.code >= sf::Keyboard::Num0 &&
-                   event.key.code <= sf::Keyboard::Num9) {
+                   event.key.code <= sf::Keyboard::Num9) { // choose file
 
           std::size_t n = event.key.code - sf::Keyboard::Num0;
           if (n >= current_map.get().size())
